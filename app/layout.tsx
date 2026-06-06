@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
 import PwaRegister from "@/src/components/PwaRegister";
+import ContenidoApp from "./ContenidoApp";
 import { LOGO_COMPLETO_SRC, LOGO_APLICACION_SRC, PWA_THEME_COLOR } from "@/src/constants/branding";
 
 const geistSans = Geist({
@@ -56,7 +57,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#F8FAFC] min-h-screen flex flex-col`}
       >
-        {children}
+        <ContenidoApp>{children}</ContenidoApp>
         <PwaRegister />
         <Toaster position="top-right" />
       </body>
