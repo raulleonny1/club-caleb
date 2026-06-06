@@ -12,6 +12,8 @@ export type RetoMiembroDashboardConfig = {
   /** Si tiene valor, el botón abre esta URL (WhatsApp, formulario, etc.) */
   urlBoton: string;
   mostrarIconoFondo: boolean;
+  /** Cambia cada vez que admin guarda el reto; las aceptaciones van ligadas a esta versión. */
+  retoVersionId?: string;
 };
 
 export const DEFAULT_RETO_MIEMBRO: RetoMiembroDashboardConfig = {
@@ -35,5 +37,6 @@ export function mergeRetoConfig(data: Partial<RetoMiembroDashboardConfig> | unde
     titulo: typeof d.titulo === "string" ? d.titulo : DEFAULT_RETO_MIEMBRO.titulo,
     textoBoton: typeof d.textoBoton === "string" ? d.textoBoton : DEFAULT_RETO_MIEMBRO.textoBoton,
     urlBoton: typeof d.urlBoton === "string" ? d.urlBoton : DEFAULT_RETO_MIEMBRO.urlBoton,
+    retoVersionId: typeof d.retoVersionId === "string" ? d.retoVersionId : undefined,
   };
 }

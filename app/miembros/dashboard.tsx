@@ -9,6 +9,10 @@ import {
 	RETO_MIEMBRO_DOC_REF,
 	type RetoMiembroDashboardConfig,
 } from "@/src/lib/retoMiembroDashboard";
+import {
+	registrarAceptacionRetoMiembro,
+	refAceptacionReto,
+} from "@/src/lib/retoMiembroAceptaciones";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
 	Trophy,
@@ -87,6 +91,8 @@ function App() {
 	const [cargandoRanking, setCargandoRanking] = useState(true);
 	const [registrosConquis, setRegistrosConquis] = useState<{ pin: string; unidad: string }[]>([]);
 	const [totalesRanking, setTotalesRanking] = useState<Record<string, number>>({});
+	const [retoMiembroAceptado, setRetoMiembroAceptado] = useState(false);
+	const [aceptandoReto, setAceptandoReto] = useState(false);
 
 	useEffect(() => {
 		const unsub = onSnapshot(
@@ -100,6 +106,51 @@ function App() {
 		);
 		return () => unsub();
 	}, []);
+
+	useEffect(() => {
+		const versionId = retoMiembro.retoVersionId?.trim();
+		if (!pin.trim() || !versionId) {
+			setRetoMiembroAceptado(false);
+			return;
+		}
+		const unsub = onSnapshot(
+			refAceptacionReto(versionId, pin),
+			(snap) => setRetoMiembroAceptado(snap.exists()),
+			() => setRetoMiembroAceptado(false)
+		);
+		return () => unsub();
+	}, [pin, retoMiembro.retoVersionId]);
+
+	const aceptarRetoMiembro = async () => {
+		const versionId = retoMiembro.retoVersionId?.trim();
+		if (!pin.trim() || !versionId) {
+			toast.error("Este reto aún no está listo. Pide al admin que lo guarde en Calendario.");
+			return;
+		}
+		if (retoMiembroAceptado || aceptandoReto) return;
+		setAceptandoReto(true);
+		try {
+			const apellido = (user as { apellido?: string } | null)?.apellido;
+			const nombre =
+				[user?.nombre, apellido].filter(Boolean).join(" ").trim() ||
+				user?.nombre ||
+				"Conquistador";
+			await registrarAceptacionRetoMiembro({
+				pin,
+				nombre,
+				unidad: unidadMiembro || user?.unidad || "",
+				retoVersionId: versionId,
+				tituloReto: retoMiembro.titulo,
+			});
+			setRetoMiembroAceptado(true);
+			toast.success("¡Reto aceptado! El admin verá tu nombre en Calendario.");
+		} catch (err) {
+			console.error(err);
+			toast.error("No se pudo registrar la aceptación. Intenta de nuevo.");
+		} finally {
+			setAceptandoReto(false);
+		}
+	};
 
 	useEffect(() => {
 		if (!pin) return;
@@ -484,9 +535,14 @@ function App() {
 								<RetoEspecialCard
 									etiqueta={retoMiembro.etiqueta}
 									titulo={retoMiembro.titulo}
-									textoBoton={retoMiembro.textoBoton}
+									textoBoton={
+										aceptandoReto ? "Registrando…" : retoMiembro.textoBoton
+									}
 									urlBoton={retoMiembro.urlBoton}
 									mostrarIconoFondo={retoMiembro.mostrarIconoFondo}
+									aceptado={retoMiembroAceptado}
+									textoAceptado="¡Reto aceptado!"
+									onAceptar={aceptarRetoMiembro}
 								/>
 							)
 						)}

@@ -100,6 +100,14 @@ service cloud.firestore {
 
 
 
+    match /retoMiembroAceptaciones/{docId} {
+
+      allow read, write: if true;
+
+    }
+
+
+
     match /frasesSemana/{docId} {
 
       allow read, write: if true;

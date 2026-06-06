@@ -11,6 +11,8 @@ type Props = {
   urlBoton?: string;
   mostrarIconoFondo?: boolean;
   onAceptar?: () => void;
+  aceptado?: boolean;
+  textoAceptado?: string;
 };
 
 export default function RetoEspecialCard({
@@ -21,9 +23,19 @@ export default function RetoEspecialCard({
   urlBoton,
   mostrarIconoFondo = true,
   onAceptar,
+  aceptado = false,
+  textoAceptado = "¡Reto aceptado!",
 }: Props) {
   const botonClass =
     "flex min-h-[48px] w-full items-center justify-center rounded-2xl bg-white px-4 py-3.5 text-center text-xs font-black uppercase tracking-[0.15em] text-indigo-900 shadow-lg transition hover:bg-indigo-50 active:scale-[0.98] sm:text-sm";
+
+  const handleAceptar = () => {
+    onAceptar?.();
+    const url = urlBoton?.trim();
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
 
   return (
     <div className="relative overflow-hidden rounded-3xl bg-linear-to-br from-violet-600 via-indigo-700 to-slate-900 p-6 text-white shadow-2xl ring-1 ring-white/10 sm:rounded-[2.5rem] sm:p-8">
@@ -44,12 +56,12 @@ export default function RetoEspecialCard({
         ) : (
           <div className="mb-6" />
         )}
-        {urlBoton?.trim() ? (
-          <a href={urlBoton.trim()} target="_blank" rel="noopener noreferrer" className={botonClass}>
-            {textoBoton}
-          </a>
+        {aceptado ? (
+          <div className="flex min-h-[48px] w-full items-center justify-center rounded-2xl border-2 border-emerald-300/80 bg-emerald-500/90 px-4 py-3.5 text-center text-xs font-black uppercase tracking-[0.15em] text-white shadow-lg sm:text-sm">
+            ✓ {textoAceptado}
+          </div>
         ) : (
-          <button type="button" className={botonClass} onClick={onAceptar}>
+          <button type="button" className={botonClass} onClick={handleAceptar}>
             {textoBoton}
           </button>
         )}
