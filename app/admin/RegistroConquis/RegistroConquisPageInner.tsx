@@ -213,6 +213,7 @@ export default function RegistroConquisPageInner({ unidades: initialUnidades, co
         match(c.nombre) ||
         match(c.apellido) ||
         match(c.unidad) ||
+        match(c.clase) ||
         match(c.consejero) ||
         match(c.whatsapp)
       );
@@ -579,7 +580,7 @@ export default function RegistroConquisPageInner({ unidades: initialUnidades, co
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-lg font-bold text-blue-700">Conquistadores registrados</h3>
-            <p className="text-sm text-slate-600">Busca por nombre, unidad, consejero o WhatsApp.</p>
+            <p className="text-sm text-slate-600">Busca por nombre, unidad, clase, consejero o WhatsApp.</p>
           </div>
           <input
             type="search"
@@ -610,6 +611,7 @@ export default function RegistroConquisPageInner({ unidades: initialUnidades, co
             <TableHeader>
               <TableRow className="bg-indigo-100">
                 <TableHead>Nombre</TableHead>
+                <TableHead>Clase</TableHead>
                 <TableHead>Unidad</TableHead>
                 <TableHead>Consejero</TableHead>
                 <TableHead>WhatsApp</TableHead>
@@ -624,6 +626,15 @@ export default function RegistroConquisPageInner({ unidades: initialUnidades, co
                 <TableRow key={m.id} className="border-b">
                   <TableCell className="font-semibold">
                     {[m.nombre, m.apellido].filter(Boolean).join(" ")}
+                  </TableCell>
+                  <TableCell>
+                    {m.clase?.trim() ? (
+                      <span className="inline-flex rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-bold text-indigo-800">
+                        {m.clase}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 italic">Sin clase</span>
+                    )}
                   </TableCell>
                   <TableCell>{m.unidad}</TableCell>
                   <TableCell>{m.consejero}</TableCell>
