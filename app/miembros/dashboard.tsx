@@ -23,7 +23,13 @@ import {
 	ShieldCheck,
 	TrendingUp
 } from 'lucide-react';
-import { getCategoriasConPuntos, sumarPuntos } from "@/src/lib/categoriasPuntos";
+import { getCategoriasConPuntos, indexarTotalesPorPin, sumarPuntos } from "@/src/lib/categoriasPuntos";
+import {
+	construirRankingConquistadores,
+	posicionConquistador,
+	type PosicionRankingConquistador as PosicionRanking,
+} from "@/src/lib/rankingConquistadores";
+import PosicionRankingConquistador from "@/src/components/PosicionRankingConquistador";
 import {
 	getProgresoClasePorcentaje,
 	getSiguienteClase,
@@ -77,6 +83,10 @@ function App() {
 	const [retoMiembro, setRetoMiembro] = useState<RetoMiembroDashboardConfig>(DEFAULT_RETO_MIEMBRO);
 	const [unidadMiembro, setUnidadMiembro] = useState("");
 	const [retoConsejero, setRetoConsejero] = useState<RetoEspecialDoc | null>(null);
+	const [posicionRanking, setPosicionRanking] = useState<PosicionRanking | null>(null);
+	const [cargandoRanking, setCargandoRanking] = useState(true);
+	const [registrosConquis, setRegistrosConquis] = useState<{ pin: string; unidad: string }[]>([]);
+	const [totalesRanking, setTotalesRanking] = useState<Record<string, number>>({});
 
 	useEffect(() => {
 		const unsub = onSnapshot(
@@ -160,6 +170,49 @@ function App() {
 		});
 		return () => unsubEventos();
 	}, []);
+
+	useEffect(() => {
+		const unsub = onSnapshot(
+			collection(db, "RegistroConquis"),
+			(snap) => {
+				setRegistrosConquis(
+					snap.docs.map((d) => {
+						const data = d.data();
+						return {
+							pin: String(data.pin ?? "").trim(),
+							unidad: String(data.unidad ?? "").trim(),
+						};
+					}).filter((r) => r.pin)
+				);
+			},
+			() => setRegistrosConquis([])
+		);
+		return () => unsub();
+	}, []);
+
+	useEffect(() => {
+		const unsub = onSnapshot(
+			collection(db, "calificacionesConquis"),
+			(snap) => {
+				setTotalesRanking(indexarTotalesPorPin(snap.docs));
+				setCargandoRanking(false);
+			},
+			() => {
+				setTotalesRanking({});
+				setCargandoRanking(false);
+			}
+		);
+		return () => unsub();
+	}, []);
+
+	useEffect(() => {
+		if (!pin.trim() || registrosConquis.length === 0) {
+			setPosicionRanking(null);
+			return;
+		}
+		const lista = construirRankingConquistadores(registrosConquis, totalesRanking);
+		setPosicionRanking(posicionConquistador(pin, unidadMiembro, lista));
+	}, [pin, registrosConquis, totalesRanking, unidadMiembro]);
 
 	useEffect(() => {
 		if (!unidadMiembro.trim()) {
@@ -249,6 +302,11 @@ function App() {
 						</div>
 					</div>
 				</div>
+				<PosicionRankingConquistador
+					posicion={posicionRanking}
+					cargando={cargandoRanking}
+					unidad={unidad}
+				/>
 				<div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
 					<div className="lg:col-span-8 space-y-6 md:space-y-8">
 						<div className="bg-white rounded-[2.5rem] p-6 md:p-10 shadow-xl border border-slate-100 overflow-hidden relative">
