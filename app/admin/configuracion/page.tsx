@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { db } from "../../../src/firebase";
+import RespaldoConfigPanel from "@/src/components/admin/RespaldoConfigPanel";
 import { collection, getDocs } from "firebase/firestore";
 import {
   corregirPinsDuplicadosEnClub,
@@ -415,19 +415,7 @@ export default function ConfiguracionAdmin() {
           </p>
         </div>
 
-        <div className="mb-8 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
-          <h2 className="text-lg font-bold text-emerald-900">Respaldo de datos</h2>
-          <p className="mt-1 text-sm text-emerald-800">
-            Descarga una copia completa de Firebase en tu PC o restaura todo desde un archivo .json
-            si borraste datos por error.
-          </p>
-          <Link
-            href="/admin/respaldo"
-            className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow hover:bg-emerald-700"
-          >
-            Ir a respaldo y restauración →
-          </Link>
-        </div>
+        <RespaldoConfigPanel />
 
         {duplicadosPin.length > 0 && (
           <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-950">

@@ -2,7 +2,6 @@
 import { useRouter } from "next/navigation";
 
 const PASOS_RESTAURACION = [
-  { n: 0, titulo: "Respaldo y restauración", ruta: "/admin/respaldo", nota: "Descarga .json al PC o recupera todo si borraste datos." },
   { n: 1, titulo: "Unidades", ruta: "/admin/unidades", nota: "Gacelas, Tigres, etc." },
   { n: 2, titulo: "Consejeros", ruta: "/admin/consejero", nota: "Asigna unidades a cada consejero. Guarda el PIN que genera." },
   { n: 3, titulo: "Registro Conquis", ruta: "/admin/RegistroConquis", nota: "Conquistadores con unidad y clase." },
