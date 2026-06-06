@@ -108,6 +108,14 @@ service cloud.firestore {
 
 
 
+    match /especialidadAvanceHistorial/{docId} {
+
+      allow read, write: if true;
+
+    }
+
+
+
     match /frasesSemana/{docId} {
 
       allow read, write: if true;

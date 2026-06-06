@@ -11,19 +11,37 @@ import {
   Award,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
+  History,
   Layers,
   Loader2,
   Search,
   Users,
 } from "lucide-react";
+import {
+  type EspecialidadEnCurso,
+  type EstadoEspecialidad,
+  ESTADOS_ESPECIALIDAD,
+  ESTADO_INICIAL_ESPECIALIDAD,
+  claveEspecialidadEnCurso,
+  etiquetaEstadoEspecialidad,
+  estiloEstadoEspecialidad,
+  parseEspecialidadEnCurso,
+} from "@/src/lib/especialidadEnCurso";
+import {
+  formatearFechaAvance,
+  parseHistorialAvanceDoc,
+  registrarAvanceEspecialidad,
+  type EspecialidadAvanceHistorialEntry,
+} from "@/src/lib/especialidadAvance";
 
-export type EspecialidadObj = {
+type EspecialidadCatalogo = {
   area: string;
   categoria: string;
   especialidad: string;
 };
 
-type CatalogoEsp = EspecialidadObj & { id: string };
+type CatalogoEsp = EspecialidadCatalogo & { id: string };
 
 type ConquisRow = {
   id: string;
@@ -33,31 +51,36 @@ type ConquisRow = {
   unidadCanon: string;
   clase: string;
   pin: string;
-  especialidadEnCurso: EspecialidadObj | null;
+  especialidadEnCurso: EspecialidadEnCurso | null;
 };
 
-function parseEspecialidadEnCurso(raw: unknown): EspecialidadObj | null {
-  if (Array.isArray(raw) && raw.length > 0) {
-    const e = raw[0] as Partial<EspecialidadObj>;
-    if (e.especialidad?.trim()) {
-      return {
-        area: String(e.area ?? "").trim(),
-        categoria: String(e.categoria ?? "").trim(),
-        especialidad: e.especialidad.trim(),
-      };
-    }
-  }
-  if (typeof raw === "string" && raw.trim()) {
-    return { area: "", categoria: "", especialidad: raw.trim() };
-  }
-  return null;
+function nombreCompleto(c: Pick<ConquisRow, "nombre" | "apellido">): string {
+  return [c.nombre, c.apellido].filter(Boolean).join(" ").trim();
 }
 
-export function claveEspecialidad(e: EspecialidadObj): string {
-  return `${e.area}|||${e.categoria}|||${e.especialidad}`;
+async function registrarAvanceMiembro(
+  miembro: ConquisRow,
+  esp: EspecialidadEnCurso,
+  estadoAnterior: EstadoEspecialidad | null,
+  estadoNuevo: EstadoEspecialidad,
+  tipo: "asignacion" | "cambio_estado",
+  origen: "individual" | "unidad"
+) {
+  if (!miembro.pin.trim()) return;
+  await registrarAvanceEspecialidad({
+    conquisId: miembro.id,
+    pin: miembro.pin,
+    nombre: nombreCompleto(miembro),
+    unidad: miembro.unidadCanon,
+    esp,
+    estadoAnterior,
+    estadoNuevo,
+    tipo,
+    origen,
+  });
 }
 
-function parseClaveEspecialidad(clave: string): EspecialidadObj | null {
+function parseClaveEspecialidad(clave: string): EspecialidadEnCurso | null {
   if (!clave) return null;
   const [area, categoria, especialidad] = clave.split("|||");
   if (!especialidad?.trim()) return null;
@@ -65,12 +88,65 @@ function parseClaveEspecialidad(clave: string): EspecialidadObj | null {
     area: area?.trim() ?? "",
     categoria: categoria?.trim() ?? "",
     especialidad: especialidad.trim(),
+    estado: ESTADO_INICIAL_ESPECIALIDAD,
   };
 }
 
-function etiquetaEspecialidad(e: EspecialidadObj): string {
+export function claveEspecialidad(e: EspecialidadCatalogo): string {
+  return claveEspecialidadEnCurso(e);
+}
+
+function etiquetaEspecialidad(e: EspecialidadCatalogo): string {
   const partes = [e.area, e.categoria, e.especialidad].filter(Boolean);
   return partes.join(" · ");
+}
+
+function estadoComunUnidad(
+  miembros: ConquisRow[]
+): { estado: EstadoEspecialidad; mixta: boolean } {
+  const conEsp = miembros.filter((m) => m.especialidadEnCurso);
+  if (conEsp.length === 0) return { estado: ESTADO_INICIAL_ESPECIALIDAD, mixta: false };
+  const estados = conEsp.map((m) => m.especialidadEnCurso!.estado);
+  const primera = estados[0];
+  const unificada = estados.every((e) => e === primera);
+  return { estado: primera, mixta: !unificada };
+}
+
+function SelectEstado({
+  value,
+  onChange,
+  disabled,
+  className = "",
+}: {
+  value: EstadoEspecialidad;
+  onChange: (estado: EstadoEspecialidad) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as EstadoEspecialidad)}
+      disabled={disabled}
+      className={`rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-60 ${className}`}
+    >
+      {ESTADOS_ESPECIALIDAD.map((e) => (
+        <option key={e.id} value={e.id}>
+          {e.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function BadgeEstado({ estado }: { estado: EstadoEspecialidad }) {
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${estiloEstadoEspecialidad(estado)}`}
+    >
+      {etiquetaEstadoEspecialidad(estado)}
+    </span>
+  );
 }
 
 function especialidadComunUnidad(miembros: ConquisRow[]): { clave: string; mixta: boolean } {
@@ -134,7 +210,7 @@ function estiloArea(area: string) {
   );
 }
 
-function ResumenEspecialidad({ esp }: { esp: EspecialidadObj | null }) {
+function ResumenEspecialidad({ esp }: { esp: EspecialidadCatalogo | EspecialidadEnCurso | null }) {
   if (!esp) return null;
   const estilo = estiloArea(esp.area);
   return (
@@ -411,9 +487,21 @@ export default function EspecialidadesEnCursoPage() {
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
   const [vista, setVista] = useState<"unidad" | "individual">("unidad");
+  const [menuSeccion, setMenuSeccion] = useState<"asignacion" | "seguimiento">("asignacion");
   const [guardando, setGuardando] = useState<Set<string>>(new Set());
   const [guardandoUnidad, setGuardandoUnidad] = useState<Set<string>>(new Set());
   const [unidadesAbiertas, setUnidadesAbiertas] = useState<Set<string>>(new Set());
+  const [historialAvance, setHistorialAvance] = useState<EspecialidadAvanceHistorialEntry[]>([]);
+
+  useEffect(() => {
+    if (menuSeccion !== "seguimiento") return;
+    return onSnapshot(collection(db, "especialidadAvanceHistorial"), (snap) => {
+      const items = snap.docs
+        .map((d) => parseHistorialAvanceDoc(d.id, d.data() as Record<string, unknown>))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      setHistorialAvance(items.slice(0, 80));
+    });
+  }, [menuSeccion]);
 
   useEffect(() => {
     return onSnapshot(collection(db, "unidades"), (snap) => {
@@ -479,12 +567,26 @@ export default function EspecialidadesEnCursoPage() {
 
   const guardarEspecialidad = useCallback(
     async (conquisId: string, clave: string) => {
-      const esp = parseClaveEspecialidad(clave);
+      const miembro = conquis.find((c) => c.id === conquisId);
+      const parsed = parseClaveEspecialidad(clave);
+      const esp = parsed
+        ? { ...parsed, estado: ESTADO_INICIAL_ESPECIALIDAD }
+        : null;
       setGuardando((s) => new Set(s).add(conquisId));
       try {
         await updateDoc(doc(db, "RegistroConquis", conquisId), {
           especialidades: esp ? [esp] : [],
         });
+        if (esp && miembro) {
+          await registrarAvanceMiembro(
+            miembro,
+            esp,
+            null,
+            esp.estado,
+            "asignacion",
+            "individual"
+          );
+        }
         setConquis((prev) =>
           prev.map((c) =>
             c.id === conquisId ? { ...c, especialidadEnCurso: esp } : c
@@ -502,7 +604,47 @@ export default function EspecialidadesEnCursoPage() {
         });
       }
     },
-    []
+    [conquis]
+  );
+
+  const guardarEstadoConquis = useCallback(
+    async (conquisId: string, estado: EstadoEspecialidad) => {
+      const miembro = conquis.find((c) => c.id === conquisId);
+      if (!miembro?.especialidadEnCurso) return;
+      if (miembro.especialidadEnCurso.estado === estado) return;
+      const estadoAnterior = miembro.especialidadEnCurso.estado;
+      const payload = { ...miembro.especialidadEnCurso, estado };
+      setGuardando((s) => new Set(s).add(conquisId));
+      try {
+        await updateDoc(doc(db, "RegistroConquis", conquisId), {
+          especialidades: [payload],
+        });
+        await registrarAvanceMiembro(
+          miembro,
+          payload,
+          estadoAnterior,
+          estado,
+          "cambio_estado",
+          "individual"
+        );
+        setConquis((prev) =>
+          prev.map((c) =>
+            c.id === conquisId ? { ...c, especialidadEnCurso: payload } : c
+          )
+        );
+        toast.success("Estado actualizado — el conquistador recibirá la notificación");
+      } catch (err) {
+        console.error(err);
+        toast.error("No se pudo guardar el estado");
+      } finally {
+        setGuardando((s) => {
+          const n = new Set(s);
+          n.delete(conquisId);
+          return n;
+        });
+      }
+    },
+    [conquis]
   );
 
   const asignarATodaUnidad = async (unidad: string, clave: string) => {
@@ -510,14 +652,27 @@ export default function EspecialidadesEnCursoPage() {
     if (miembros.length === 0) return;
     setGuardandoUnidad((s) => new Set(s).add(unidad));
     try {
+      const parsed = parseClaveEspecialidad(clave);
+      const esp = parsed
+        ? { ...parsed, estado: ESTADO_INICIAL_ESPECIALIDAD }
+        : null;
       await Promise.all(
-        miembros.map((m) =>
-          updateDoc(doc(db, "RegistroConquis", m.id), {
-            especialidades: clave ? [parseClaveEspecialidad(clave)!] : [],
-          })
-        )
+        miembros.map(async (m) => {
+          await updateDoc(doc(db, "RegistroConquis", m.id), {
+            especialidades: esp ? [esp] : [],
+          });
+          if (esp) {
+            await registrarAvanceMiembro(
+              m,
+              esp,
+              null,
+              esp.estado,
+              "asignacion",
+              "unidad"
+            );
+          }
+        })
       );
-      const esp = parseClaveEspecialidad(clave);
       setConquis((prev) =>
         prev.map((c) =>
           c.unidadCanon === unidad ? { ...c, especialidadEnCurso: esp } : c
@@ -531,6 +686,53 @@ export default function EspecialidadesEnCursoPage() {
     } catch (err) {
       console.error(err);
       toast.error("Error al guardar la unidad");
+    } finally {
+      setGuardandoUnidad((s) => {
+        const n = new Set(s);
+        n.delete(unidad);
+        return n;
+      });
+    }
+  };
+
+  const guardarEstadoUnidad = async (unidad: string, estado: EstadoEspecialidad) => {
+    const miembros = conquis.filter(
+      (c) => c.unidadCanon === unidad && c.especialidadEnCurso
+    );
+    if (miembros.length === 0) return;
+    setGuardandoUnidad((s) => new Set(s).add(unidad));
+    try {
+      await Promise.all(
+        miembros.map(async (m) => {
+          if (m.especialidadEnCurso!.estado === estado) return;
+          const estadoAnterior = m.especialidadEnCurso!.estado;
+          const payload = { ...m.especialidadEnCurso!, estado };
+          await updateDoc(doc(db, "RegistroConquis", m.id), {
+            especialidades: [payload],
+          });
+          await registrarAvanceMiembro(
+            m,
+            payload,
+            estadoAnterior,
+            estado,
+            "cambio_estado",
+            "unidad"
+          );
+        })
+      );
+      setConquis((prev) =>
+        prev.map((c) =>
+          c.unidadCanon === unidad && c.especialidadEnCurso
+            ? { ...c, especialidadEnCurso: { ...c.especialidadEnCurso, estado } }
+            : c
+        )
+      );
+      toast.success(
+        `Estado «${etiquetaEstadoEspecialidad(estado)}» en «${unidad}» — notificación enviada a los miembros`
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al guardar el estado de la unidad");
     } finally {
       setGuardandoUnidad((s) => {
         const n = new Set(s);
@@ -568,9 +770,45 @@ export default function EspecialidadesEnCursoPage() {
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "es"));
   }, [filtrada]);
 
+  const filtradaSeguimiento = useMemo(
+    () => filtrada.filter((c) => c.especialidadEnCurso),
+    [filtrada]
+  );
+
+  const porUnidadSeguimiento = useMemo(() => {
+    const map = new Map<string, ConquisRow[]>();
+    for (const c of filtradaSeguimiento) {
+      const u = c.unidadCanon || "Sin unidad";
+      if (!map.has(u)) map.set(u, []);
+      map.get(u)!.push(c);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "es"));
+  }, [filtradaSeguimiento]);
+
+  const historialFiltrado = useMemo(() => {
+    const term = busqueda.trim().toLowerCase();
+    if (!term) return historialAvance;
+    return historialAvance.filter(
+      (h) =>
+        h.nombre.toLowerCase().includes(term) ||
+        h.unidad.toLowerCase().includes(term) ||
+        h.especialidad.toLowerCase().includes(term) ||
+        h.pin.includes(term)
+    );
+  }, [historialAvance, busqueda]);
+
   const stats = useMemo(() => {
     const conEsp = conquis.filter((c) => c.especialidadEnCurso).length;
     return { total: conquis.length, conEsp, sinEsp: conquis.length - conEsp };
+  }, [conquis]);
+
+  const statsSeguimiento = useMemo(() => {
+    const conEsp = conquis.filter((c) => c.especialidadEnCurso);
+    const porEstado = ESTADOS_ESPECIALIDAD.map((e) => ({
+      ...e,
+      count: conEsp.filter((c) => c.especialidadEnCurso!.estado === e.id).length,
+    }));
+    return { total: conEsp.length, porEstado };
   }, [conquis]);
 
   const unidadesInicializadas = useRef(false);
@@ -592,7 +830,7 @@ export default function EspecialidadesEnCursoPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8 font-sans text-slate-900">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
         <Link
           href="/admin"
           className="mb-6 inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-bold text-indigo-800 shadow-sm hover:bg-indigo-50"
@@ -609,8 +847,10 @@ export default function EspecialidadesEnCursoPage() {
             <div>
               <h1 className="text-2xl font-black text-slate-900">Especialidades en curso</h1>
               <p className="text-sm text-slate-600">
-                <strong>Por unidad:</strong> una especialidad para todos los miembros.{" "}
-                <strong>Individual:</strong> asignación por conquistador. Catálogo en{" "}
+                {menuSeccion === "asignacion"
+                  ? "Asigna especialidades por unidad o individualmente."
+                  : "Actualiza el avance de cada especialidad asignada."}{" "}
+                Catálogo en{" "}
                 <Link href="/admin/especialidades" className="font-semibold text-indigo-700 underline">
                   Especialidades
                 </Link>
@@ -620,6 +860,39 @@ export default function EspecialidadesEnCursoPage() {
           </div>
         </header>
 
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <aside className="shrink-0 lg:w-56">
+            <nav className="space-y-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setMenuSeccion("asignacion")}
+                className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${
+                  menuSeccion === "asignacion"
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Award size={18} />
+                Asignar especialidades
+              </button>
+              <button
+                type="button"
+                onClick={() => setMenuSeccion("seguimiento")}
+                className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${
+                  menuSeccion === "seguimiento"
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <ClipboardList size={18} />
+                Seguimiento de avances
+              </button>
+            </nav>
+          </aside>
+
+          <main className="min-w-0 flex-1">
+        {menuSeccion === "asignacion" ? (
+          <>
         <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
             { label: "Conquistadores", value: stats.total, icon: Users },
@@ -841,6 +1114,270 @@ export default function EspecialidadesEnCursoPage() {
             })}
           </div>
         )}
+          </>
+        ) : (
+          <>
+            <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <div className="col-span-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:col-span-1">
+                <div className="rounded-xl bg-indigo-100 p-2.5 text-indigo-700">
+                  <ClipboardList size={20} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Con especialidad</p>
+                  <p className="text-2xl font-black text-slate-800">{statsSeguimiento.total}</p>
+                </div>
+              </div>
+              {statsSeguimiento.porEstado.map((e) => (
+                <div
+                  key={e.id}
+                  className="flex flex-col justify-center rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                >
+                  <BadgeEstado estado={e.id} />
+                  <p className="mt-1 text-xl font-black text-slate-800">{e.count}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setVista("unidad")}
+                  className={`rounded-lg px-4 py-2 text-sm font-bold transition ${
+                    vista === "unidad"
+                      ? "bg-indigo-600 text-white"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Por unidad
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVista("individual")}
+                  className={`rounded-lg px-4 py-2 text-sm font-bold transition ${
+                    vista === "individual"
+                      ? "bg-indigo-600 text-white"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Individual
+                </button>
+              </div>
+              <div className="relative flex-1 sm:max-w-md">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Buscar unidad, nombre o especialidad…"
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                />
+              </div>
+            </div>
+
+            {loading ? (
+              <p className="flex items-center justify-center gap-2 py-16 text-slate-500">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Cargando seguimiento…
+              </p>
+            ) : statsSeguimiento.total === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                <p className="font-semibold text-slate-700">No hay especialidades asignadas aún</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Primero asigna especialidades en «Asignar especialidades».
+                </p>
+              </div>
+            ) : vista === "individual" ? (
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-indigo-50 text-left text-xs font-bold uppercase tracking-wide text-indigo-900">
+                      <tr>
+                        <th className="px-4 py-3">Nombre</th>
+                        <th className="px-4 py-3">Unidad</th>
+                        <th className="px-4 py-3">Especialidad</th>
+                        <th className="px-4 py-3">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtradaSeguimiento.map((c) => {
+                        const esp = c.especialidadEnCurso!;
+                        const busy = guardando.has(c.id);
+                        return (
+                          <tr key={c.id} className="border-t border-slate-100">
+                            <td className="px-4 py-3 font-semibold text-slate-800">
+                              {[c.nombre, c.apellido].filter(Boolean).join(" ")}
+                            </td>
+                            <td className="px-4 py-3 text-slate-600">{c.unidadCanon}</td>
+                            <td className="px-4 py-3">
+                              <ResumenEspecialidad esp={esp} />
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <SelectEstado
+                                  value={esp.estado}
+                                  disabled={busy}
+                                  onChange={(estado) => guardarEstadoConquis(c.id, estado)}
+                                />
+                                {busy ? (
+                                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-indigo-500" />
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {porUnidadSeguimiento.map(([unidad, miembrosVisibles]) => {
+                  const abierta = unidadesAbiertas.has(unidad);
+                  const miembrosUnidad = conquis.filter(
+                    (c) => c.unidadCanon === unidad && c.especialidadEnCurso
+                  );
+                  const espUnidad = miembrosUnidad[0]?.especialidadEnCurso ?? null;
+                  const { estado: estadoUnidad, mixta: estadoMixto } =
+                    estadoComunUnidad(miembrosUnidad);
+                  const busyUnidad = guardandoUnidad.has(unidad);
+                  return (
+                    <section
+                      key={unidad}
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleUnidad(unidad)}
+                        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left hover:bg-slate-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          {abierta ? (
+                            <ChevronDown className="h-5 w-5 text-indigo-600" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5 text-indigo-600" />
+                          )}
+                          <div>
+                            <h2 className="text-lg font-black text-slate-900">{unidad}</h2>
+                            <p className="text-xs text-slate-500">
+                              {miembrosUnidad.length} con especialidad
+                              {espUnidad ? ` · ${etiquetaEspecialidad(espUnidad)}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <BadgeEstado estado={estadoUnidad} />
+                      </button>
+
+                      {abierta && (
+                        <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-4">
+                          {espUnidad ? <ResumenEspecialidad esp={espUnidad} /> : null}
+                          <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                            <p className="mb-2 text-sm font-semibold text-indigo-900">
+                              Estado de avance — unidad «{unidad}»
+                            </p>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                              <SelectEstado
+                                value={estadoUnidad}
+                                disabled={busyUnidad}
+                                className="sm:min-w-[220px]"
+                                onChange={(estado) => guardarEstadoUnidad(unidad, estado)}
+                              />
+                              {busyUnidad ? (
+                                <Loader2 className="h-5 w-5 shrink-0 animate-spin text-indigo-500" />
+                              ) : null}
+                            </div>
+                            {estadoMixto ? (
+                              <p className="mt-2 text-xs text-amber-700">
+                                Hay estados distintos entre miembros. Elige uno para unificar la
+                                unidad.
+                              </p>
+                            ) : null}
+                          </div>
+                          <p className="mb-2 mt-4 text-xs font-bold uppercase tracking-wide text-slate-400">
+                            Miembros
+                          </p>
+                          <ul className="grid gap-2 sm:grid-cols-2">
+                            {miembrosVisibles.map((c) => (
+                              <li
+                                key={c.id}
+                                className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+                              >
+                                <div>
+                                  <p className="font-bold text-slate-800">
+                                    {[c.nombre, c.apellido].filter(Boolean).join(" ")}
+                                  </p>
+                                  <p className="text-xs text-slate-500">{c.clase || "Sin clase"}</p>
+                                </div>
+                                {c.especialidadEnCurso ? (
+                                  <BadgeEstado estado={c.especialidadEnCurso.estado} />
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+            <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
+                <History className="h-5 w-5 text-indigo-600" />
+                <div>
+                  <h2 className="font-bold text-slate-900">Historial de avances</h2>
+                  <p className="text-xs text-slate-500">
+                    Cambios y asignaciones en tiempo real — también visibles para cada conquistador
+                  </p>
+                </div>
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {historialFiltrado.length === 0 ? (
+                  <p className="px-5 py-10 text-center text-sm text-slate-500">
+                    Aún no hay movimientos registrados.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {historialFiltrado.map((h) => (
+                      <li key={h.id} className="px-5 py-3.5 hover:bg-slate-50">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-800">
+                              {h.nombre || "Conquistador"}{" "}
+                              <span className="font-normal text-slate-500">· {h.unidad}</span>
+                            </p>
+                            <p className="text-xs text-slate-600">{h.especialidad}</p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {h.tipo === "asignacion" ? "Asignación" : "Cambio de estado"} ·{" "}
+                              {h.origen === "unidad" ? "Por unidad" : "Individual"}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                              {h.estadoAnterior ? (
+                                <BadgeEstado estado={h.estadoAnterior} />
+                              ) : (
+                                <span className="text-[10px] font-bold text-slate-400">Nuevo</span>
+                              )}
+                              <span className="text-slate-300">→</span>
+                              <BadgeEstado estado={h.estadoNuevo} />
+                            </div>
+                            <p className="mt-1 text-[10px] font-medium text-slate-400">
+                              {formatearFechaAvance(h.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+          </>
+        )}
+          </main>
+        </div>
       </div>
     </div>
   );

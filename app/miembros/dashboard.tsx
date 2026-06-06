@@ -48,23 +48,32 @@ import {
 	type RetoEspecialDoc,
 } from "@/src/lib/retosEspeciales";
 import { toast } from "react-hot-toast";
+import {
+	iconoAreaEspecialidad,
+	parseEspecialidadesEnCurso,
+	etiquetaEstadoEspecialidad,
+	estiloEstadoEspecialidad,
+	type EspecialidadEnCurso,
+} from "@/src/lib/especialidadEnCurso";
+import {
+	formatearFechaAvance,
+	marcarNotificacionAvanceVista,
+	parseHistorialAvanceDoc,
+	parseNotificacionAvance,
+	type EspecialidadAvanceHistorialEntry,
+	type EspecialidadAvanceNotif,
+} from "@/src/lib/especialidadAvance";
 
 interface Usuario {
 	nombre?: string;
 	unidad?: string;
 	clase?: string;
-	especialidades?: Especialidad[];
 	tareasCompletadas?: number;
 	tareasPendientes?: number;
 	siguienteNivel?: string;
 	rango?: string;
 	puntos?: number;
 	progresoClase?: number;
-}
-
-interface Especialidad {
-	nombre?: string;
-	icono?: string;
 }
 function App() {
 	const searchParams = useSearchParams();
@@ -73,7 +82,7 @@ function App() {
 	const [user, setUser] = useState<Usuario | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
-	const [especialidades, setEspecialidades] = useState<Especialidad[]>([]);
+	const [especialidadesEnCurso, setEspecialidadesEnCurso] = useState<EspecialidadEnCurso[]>([]);
 	const [calificacionesRecientes, setCalificacionesRecientes] = useState<any[]>([]);
 	const [puntosCategorias, setPuntosCategorias] = useState<Record<string, number>>({});
 	const [etiquetasActividades, setEtiquetasActividades] = useState<Record<string, string>>({});
@@ -94,6 +103,10 @@ function App() {
 	const [totalesRanking, setTotalesRanking] = useState<Record<string, number>>({});
 	const [retoMiembroAceptado, setRetoMiembroAceptado] = useState(false);
 	const [aceptandoReto, setAceptandoReto] = useState(false);
+	const [conquisDocId, setConquisDocId] = useState("");
+	const [notificacionAvance, setNotificacionAvance] = useState<EspecialidadAvanceNotif | null>(null);
+	const [historialAvanceEsp, setHistorialAvanceEsp] = useState<EspecialidadAvanceHistorialEntry[]>([]);
+	const [cerrandoNotif, setCerrandoNotif] = useState(false);
 
 	useEffect(() => {
 		const unsub = onSnapshot(
@@ -166,27 +179,40 @@ function App() {
 			}
 		});
 
+		const qRegistro = query(collection(db, "RegistroConquis"), where("pin", "==", pin));
+		const unsubRegistro = onSnapshot(
+			qRegistro,
+			(snap) => {
+				if (snap.empty) {
+					setError("PIN inválido o usuario no encontrado.");
+					setLoading(false);
+					return;
+				}
+				const docSnap = snap.docs[0];
+				const data = docSnap.data();
+				const clase = (data.clase as string) || "";
+				setConquisDocId(docSnap.id);
+				setUser({ ...data });
+				setUnidadMiembro((data.unidad as string) || "");
+				setEspecialidadesEnCurso(parseEspecialidadesEnCurso(data.especialidades));
+				setNotificacionAvance(parseNotificacionAvance(data.especialidadAvanceNotif));
+				setSiguienteClase(getSiguienteClase(clase));
+				const pctGuardado =
+					typeof data.progresoClase === "number" && !Number.isNaN(data.progresoClase)
+						? data.progresoClase
+						: null;
+				setProgresoClase(pctGuardado ?? getProgresoClasePorcentaje(clase));
+				setError("");
+				setLoading(false);
+			},
+			(err) => {
+				console.error(err);
+				setLoading(false);
+			}
+		);
+
 		(async () => {
 			try {
-				const snap = await getDocs(
-					query(collection(db, "RegistroConquis"), where("pin", "==", pin))
-				);
-				if (!snap.empty) {
-					const data = snap.docs[0].data();
-					const clase = (data.clase as string) || "";
-					setUser({ ...data });
-					setUnidadMiembro((data.unidad as string) || "");
-					setEspecialidades(data.especialidades || []);
-					setSiguienteClase(getSiguienteClase(clase));
-					const pctGuardado =
-						typeof data.progresoClase === "number" && !Number.isNaN(data.progresoClase)
-							? data.progresoClase
-							: null;
-					setProgresoClase(pctGuardado ?? getProgresoClasePorcentaje(clase));
-				} else {
-					setError("PIN inválido o usuario no encontrado.");
-				}
-
 				const califSnap = await getDocs(
 					query(collection(db, "calificaciones"), where("pin", "==", pin))
 				);
@@ -198,13 +224,45 @@ function App() {
 				setHistorialSemanal(semSnap.docs.map((d) => d.data() as { puntos?: Record<string, unknown> }));
 			} catch (err) {
 				console.error(err);
-			} finally {
-				setLoading(false);
 			}
 		})();
 
-		return () => unsubConquis();
+		return () => {
+			unsubConquis();
+			unsubRegistro();
+		};
 	}, [pin]);
+
+	useEffect(() => {
+		if (!pin.trim()) {
+			setHistorialAvanceEsp([]);
+			return;
+		}
+		const qHist = query(
+			collection(db, "especialidadAvanceHistorial"),
+			where("pin", "==", pin)
+		);
+		const unsub = onSnapshot(qHist, (snap) => {
+			const items = snap.docs
+				.map((d) => parseHistorialAvanceDoc(d.id, d.data() as Record<string, unknown>))
+				.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+			setHistorialAvanceEsp(items.slice(0, 8));
+		});
+		return () => unsub();
+	}, [pin]);
+
+	const cerrarNotificacionAvance = async () => {
+		if (!conquisDocId || cerrandoNotif) return;
+		setCerrandoNotif(true);
+		try {
+			await marcarNotificacionAvanceVista(conquisDocId);
+			setNotificacionAvance((prev) => (prev ? { ...prev, visto: true } : null));
+		} catch (err) {
+			console.error(err);
+		} finally {
+			setCerrandoNotif(false);
+		}
+	};
 
 	useEffect(() => {
 		setResumenTareas(resumenTareasDesdeHistorial(historialSemanal, puntosCategorias));
@@ -319,7 +377,9 @@ function App() {
 				<div className="flex items-center gap-2 md:gap-4">
 					<button className="relative p-2 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 text-white hover:bg-white/20 transition-all">
 						<Bell size={18} />
-						<span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+						{notificacionAvance && !notificacionAvance.visto ? (
+							<span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+						) : null}
 					</button>
 					<button className="flex items-center gap-2 bg-white/10 backdrop-blur-md text-white p-2 md:px-4 md:py-2 rounded-xl border border-white/20 hover:bg-red-500/80 transition-all shadow-lg active:scale-95" onClick={() => router.push("/")}>
 						<LogOut size={18} />
@@ -356,6 +416,32 @@ function App() {
 					cargando={cargandoRanking}
 					unidad={unidad}
 				/>
+				{notificacionAvance && !notificacionAvance.visto ? (
+					<div className="mb-6 flex flex-col gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+						<div className="flex min-w-0 items-start gap-3">
+							<div className="rounded-xl bg-indigo-600 p-2 text-white">
+								<Bell size={18} />
+							</div>
+							<div className="min-w-0">
+								<p className="text-xs font-black uppercase tracking-wide text-indigo-700">
+									Actualización de especialidad
+								</p>
+								<p className="text-sm font-semibold text-slate-800">{notificacionAvance.mensaje}</p>
+								<p className="mt-0.5 text-[10px] text-slate-500">
+									{formatearFechaAvance(notificacionAvance.fecha)}
+								</p>
+							</div>
+						</div>
+						<button
+							type="button"
+							onClick={cerrarNotificacionAvance}
+							disabled={cerrandoNotif}
+							className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-60"
+						>
+							Entendido
+						</button>
+					</div>
+				) : null}
 				<div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
 					<div className="lg:col-span-8 space-y-6 md:space-y-8">
 						<div className="bg-white rounded-[2.5rem] p-6 md:p-10 shadow-xl border border-slate-100 overflow-hidden relative">
@@ -459,22 +545,81 @@ function App() {
 								<div className="flex items-center justify-between mb-8">
 									<h3 className="font-black text-xl flex items-center gap-3 tracking-tight">
 										<Medal className="text-pink-500" size={24} />
-										Especialidades
+										Especialidad en curso
 									</h3>
-									<button className="text-pink-500 text-xs font-black uppercase tracking-widest hover:underline">Explorar</button>
 								</div>
 								<div className="flex gap-4 overflow-x-auto pb-4 md:pb-0 scrollbar-hide">
-									{!Array.isArray(especialidades) || especialidades.length === 0 ? (
-										<div className="text-slate-400 text-xs">No tienes especialidades registradas.</div>
+									{especialidadesEnCurso.length === 0 ? (
+										<div className="text-slate-400 text-xs">
+											Aún no tienes especialidad asignada. Tu unidad o el admin la
+											registrará pronto.
+										</div>
 									) : (
-										especialidades.map((esp: Especialidad, idx: number) => (
-											  <div key={esp.nombre ?? idx} className="flex flex-col items-center gap-3 p-5 bg-indigo-50/30 rounded-4xl border border-indigo-100 min-w-32 md:flex-1 shadow-sm hover:shadow-md transition-shadow">
-												<div className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-3xl shadow-md border-2 border-indigo-50">{esp.icono || '🏕️'}</div>
-												<p className="text-[10px] font-black text-center text-slate-600 uppercase tracking-tighter leading-none">{esp.nombre ?? ''}</p>
+										especialidadesEnCurso.map((esp, idx) => (
+											<div
+												key={`${esp.area}-${esp.categoria}-${esp.especialidad}-${idx}`}
+												className="flex min-w-[200px] flex-col gap-3 rounded-4xl border border-indigo-100 bg-indigo-50/30 p-5 shadow-sm hover:shadow-md transition-shadow md:flex-1"
+											>
+												<div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-indigo-50 bg-white text-3xl shadow-md">
+													{iconoAreaEspecialidad(esp.area)}
+												</div>
+												<div className="space-y-1.5 text-center">
+													{esp.area ? (
+														<span className="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-indigo-800">
+															{esp.area}
+														</span>
+													) : null}
+													{esp.categoria ? (
+														<p className="text-[11px] font-bold uppercase tracking-tight text-slate-500">
+															{esp.categoria}
+														</p>
+													) : null}
+													<p className="text-sm font-black leading-tight text-slate-800">
+														{esp.especialidad}
+													</p>
+													<span
+														className={`inline-block rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${estiloEstadoEspecialidad(esp.estado)}`}
+													>
+														{etiquetaEstadoEspecialidad(esp.estado)}
+													</span>
+												</div>
 											</div>
 										))
 									)}
 								</div>
+								{historialAvanceEsp.length > 0 ? (
+									<div className="mt-6 border-t border-slate-100 pt-5">
+										<p className="mb-3 text-xs font-black uppercase tracking-wide text-slate-400">
+											Historial de avances
+										</p>
+										<ul className="space-y-2">
+											{historialAvanceEsp.map((h) => (
+												<li
+													key={h.id}
+													className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 text-xs"
+												>
+													<div className="flex flex-wrap items-center justify-between gap-2">
+														<span
+															className={`rounded-full px-2 py-0.5 font-bold uppercase ${estiloEstadoEspecialidad(h.estadoNuevo)}`}
+														>
+															{etiquetaEstadoEspecialidad(h.estadoNuevo)}
+														</span>
+														<span className="text-slate-400">
+															{formatearFechaAvance(h.createdAt)}
+														</span>
+													</div>
+													<p className="mt-1 font-medium text-slate-600">
+														{h.tipo === "asignacion"
+															? "Especialidad asignada"
+															: h.estadoAnterior
+																? `${etiquetaEstadoEspecialidad(h.estadoAnterior)} → ${etiquetaEstadoEspecialidad(h.estadoNuevo)}`
+																: etiquetaEstadoEspecialidad(h.estadoNuevo)}
+													</p>
+												</li>
+											))}
+										</ul>
+									</div>
+								) : null}
 							</div>
 						</div>
 					</div>
