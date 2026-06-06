@@ -7,6 +7,7 @@ import {
 	DEFAULT_RETO_MIEMBRO,
 	mergeRetoConfig,
 	RETO_MIEMBRO_DOC_REF,
+	versionIdRetoMiembro,
 	type RetoMiembroDashboardConfig,
 } from "@/src/lib/retoMiembroDashboard";
 import {
@@ -108,8 +109,8 @@ function App() {
 	}, []);
 
 	useEffect(() => {
-		const versionId = retoMiembro.retoVersionId?.trim();
-		if (!pin.trim() || !versionId) {
+		const versionId = versionIdRetoMiembro(retoMiembro);
+		if (!pin.trim()) {
 			setRetoMiembroAceptado(false);
 			return;
 		}
@@ -119,14 +120,11 @@ function App() {
 			() => setRetoMiembroAceptado(false)
 		);
 		return () => unsub();
-	}, [pin, retoMiembro.retoVersionId]);
+	}, [pin, retoMiembro]);
 
 	const aceptarRetoMiembro = async () => {
-		const versionId = retoMiembro.retoVersionId?.trim();
-		if (!pin.trim() || !versionId) {
-			toast.error("Este reto aún no está listo. Pide al admin que lo guarde en Calendario.");
-			return;
-		}
+		const versionId = versionIdRetoMiembro(retoMiembro);
+		if (!pin.trim()) return;
 		if (retoMiembroAceptado || aceptandoReto) return;
 		setAceptandoReto(true);
 		try {
@@ -143,10 +141,10 @@ function App() {
 				tituloReto: retoMiembro.titulo,
 			});
 			setRetoMiembroAceptado(true);
-			toast.success("¡Reto aceptado! El admin verá tu nombre en Calendario.");
+			toast.success("¡Reto aceptado! El admin ya puede ver tu nombre en Calendario.");
 		} catch (err) {
 			console.error(err);
-			toast.error("No se pudo registrar la aceptación. Intenta de nuevo.");
+			toast.error("No se pudo registrar. Revisa tu conexión o pide al admin desplegar las reglas de Firebase.");
 		} finally {
 			setAceptandoReto(false);
 		}
@@ -524,21 +522,20 @@ function App() {
 								titulo={tituloRetoMiembro(retoConsejero)}
 								descripcion={retoConsejero.descripcion}
 								textoBoton="¡Aceptar Reto!"
-								onAceptar={() =>
+								onAceptar={() => {
 									toast.success(
 										`¡Reto aceptado! Al completarlo, tu consejero te asignará ${retoConsejero.puntos} pts en calificaciones.`
-									)
-								}
+									);
+								}}
 							/>
 						) : (
 							retoMiembro.activo && (
 								<RetoEspecialCard
 									etiqueta={retoMiembro.etiqueta}
 									titulo={retoMiembro.titulo}
-									textoBoton={
-										aceptandoReto ? "Registrando…" : retoMiembro.textoBoton
-									}
+									textoBoton={retoMiembro.textoBoton}
 									urlBoton={retoMiembro.urlBoton}
+									textoEnlaceMaterial="Ver cómo hacer el nudo (material)"
 									mostrarIconoFondo={retoMiembro.mostrarIconoFondo}
 									aceptado={retoMiembroAceptado}
 									textoAceptado="¡Reto aceptado!"

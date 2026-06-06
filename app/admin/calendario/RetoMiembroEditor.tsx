@@ -8,6 +8,7 @@ import {
   DEFAULT_RETO_MIEMBRO,
   mergeRetoConfig,
   RETO_MIEMBRO_DOC_REF,
+  versionIdRetoMiembro,
   type RetoMiembroDashboardConfig,
 } from "@/src/lib/retoMiembroDashboard";
 import {
@@ -32,11 +33,7 @@ export default function RetoMiembroEditor() {
   }, []);
 
   useEffect(() => {
-    const versionId = form.retoVersionId?.trim();
-    if (!versionId) {
-      setAceptaciones([]);
-      return;
-    }
+    const versionId = versionIdRetoMiembro(form);
     setCargandoAceptaciones(true);
     const q = query(
       collection(db, COLECCION_ACEPTACIONES_RETO),
@@ -56,7 +53,7 @@ export default function RetoMiembroEditor() {
       }
     );
     return () => unsub();
-  }, [form.retoVersionId]);
+  }, [form.retoVersionId, form.titulo, form.etiqueta]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -158,15 +155,17 @@ export default function RetoMiembroEditor() {
 
           <div>
             <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">
-              Enlace del botón (opcional)
+              Enlace de material (opcional)
             </label>
             <input
               value={form.urlBoton}
               onChange={(e) => setForm({ ...form, urlBoton: e.target.value })}
               className="w-full min-h-[44px] rounded-lg border border-slate-200 px-3 text-sm"
-              placeholder="https://… (WhatsApp, formulario, etc.)"
+              placeholder="https://… (imagen, video, WhatsApp…)"
             />
-            <p className="mt-1 text-[11px] text-slate-500">Si lo dejas vacío, el botón no abre ningún enlace.</p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              No se abre al aceptar. Aparece un enlace aparte «Ver material» debajo del botón. Aceptar solo avisa al admin.
+            </p>
           </div>
 
           <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-slate-800">
@@ -215,9 +214,9 @@ export default function RetoMiembroEditor() {
             {aceptaciones.length} aceptación{aceptaciones.length === 1 ? "" : "es"}
           </span>
         </div>
-        {!form.retoVersionId?.trim() ? (
+        {!form.titulo?.trim() ? (
           <p className="text-sm text-slate-600">
-            Guarda el reto con <strong>Guardar</strong> para empezar a registrar quién lo acepta en los dashboards.
+            Escribe el texto del reto y pulsa <strong>Guardar</strong>. Las aceptaciones aparecen aquí en cuanto un conquistador pulse «Aceptar reto».
           </p>
         ) : cargandoAceptaciones ? (
           <p className="flex items-center gap-2 text-sm text-slate-500">

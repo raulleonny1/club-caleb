@@ -40,3 +40,17 @@ export function mergeRetoConfig(data: Partial<RetoMiembroDashboardConfig> | unde
     retoVersionId: typeof d.retoVersionId === "string" ? d.retoVersionId : undefined,
   };
 }
+
+/** Id estable del reto activo (usa retoVersionId de Firebase o hash del texto si aún no se guardó). */
+export function versionIdRetoMiembro(
+  config: Pick<RetoMiembroDashboardConfig, "retoVersionId" | "titulo" | "etiqueta">
+): string {
+  const guardado = config.retoVersionId?.trim();
+  if (guardado) return guardado;
+  const base = `${config.titulo}|${config.etiqueta}`.trim();
+  let h = 0;
+  for (let i = 0; i < base.length; i++) {
+    h = (Math.imul(31, h) + base.charCodeAt(i)) | 0;
+  }
+  return `legacy_${Math.abs(h).toString(36)}`;
+}
