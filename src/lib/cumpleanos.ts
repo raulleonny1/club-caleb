@@ -146,10 +146,40 @@ const PRIORIDAD_TIPO: Record<TipoPersonaClub, number> = {
   asociado: 5,
 };
 
-function clavePorNombreYFecha(nombre: string, fechaTexto: string): string {
+function claveDiaMes(fechaTexto: string): string {
   const partes = parseFechaNacimiento(fechaTexto);
-  const fechaKey = partes ? `${partes.month}-${partes.day}` : fechaTexto.trim();
-  return `${normalizarNombrePersona(nombre)}|${fechaKey}`;
+  return partes ? `${partes.month}-${partes.day}` : fechaTexto.trim();
+}
+
+function clavePorNombreYFecha(nombre: string, fechaTexto: string): string {
+  return `${normalizarNombrePersona(nombre)}|${claveDiaMes(fechaTexto)}`;
+}
+
+function elegirNombreMasCompleto(actual: string, candidato: string): string {
+  const a = actual.trim();
+  const b = candidato.trim();
+  if (!a) return b;
+  if (!b) return a;
+  return b.length > a.length ? b : a;
+}
+
+type GrupoCumple = {
+  nombre: string;
+  fechaTexto: string;
+  tipos: TipoPersonaClub[];
+  detalles: string[];
+  idsPorTipo: Partial<Record<TipoPersonaClub, string>>;
+};
+
+function buscarGrupoConFecha(grupos: GrupoCumple[], nombre: string, fechaTexto: string): GrupoCumple | undefined {
+  const fechaKey = claveDiaMes(fechaTexto);
+  return grupos.find(
+    (g) => claveDiaMes(g.fechaTexto) === fechaKey && nombresCoinciden(g.nombre, nombre)
+  );
+}
+
+function buscarGrupoSinFecha(grupos: Omit<GrupoCumple, "fechaTexto">[], nombre: string) {
+  return grupos.find((g) => nombresCoinciden(g.nombre, nombre));
 }
 
 function ordenarTipos(tipos: Iterable<TipoPersonaClub>): TipoPersonaClub[] {
@@ -176,22 +206,12 @@ function detallesUnicos(detalles: string[]): string {
 export function deduplicarRegistrosConFecha(
   personas: Omit<CumpleanosPersona, "diasHasta" | "editRegistroId">[]
 ): Omit<CumpleanosPersona, "diasHasta">[] {
-  const map = new Map<
-    string,
-    {
-      nombre: string;
-      fechaTexto: string;
-      tipos: TipoPersonaClub[];
-      detalles: string[];
-      idsPorTipo: Partial<Record<TipoPersonaClub, string>>;
-    }
-  >();
+  const grupos: GrupoCumple[] = [];
 
   for (const p of personas) {
-    const key = clavePorNombreYFecha(p.nombre, p.fechaTexto);
-    const prev = map.get(key);
+    const prev = buscarGrupoConFecha(grupos, p.nombre, p.fechaTexto);
     if (!prev) {
-      map.set(key, {
+      grupos.push({
         nombre: p.nombre.trim(),
         fechaTexto: p.fechaTexto,
         tipos: [p.tipo],
@@ -200,12 +220,13 @@ export function deduplicarRegistrosConFecha(
       });
       continue;
     }
+    prev.nombre = elegirNombreMasCompleto(prev.nombre, p.nombre);
     prev.tipos.push(p.tipo);
     if (p.detalle?.trim()) prev.detalles.push(p.detalle.trim());
     prev.idsPorTipo[p.tipo] = p.id;
   }
 
-  return Array.from(map.values()).map((entry) => {
+  return grupos.map((entry) => {
     const tipos = ordenarTipos(entry.tipos);
     const principal = tipoPrincipal(tipos);
     const id = entry.idsPorTipo[principal] ?? Object.values(entry.idsPorTipo)[0] ?? "";
@@ -226,22 +247,13 @@ export function deduplicarRegistrosConFecha(
 
 /** Sin fecha: deduplicar solo por nombre (misma persona en varios registros). */
 export function deduplicarRegistrosSinFecha(personas: RegistradoSinFecha[]): RegistradoSinFecha[] {
-  const map = new Map<
-    string,
-    {
-      nombre: string;
-      tipos: TipoPersonaClub[];
-      detalles: string[];
-      idsPorTipo: Partial<Record<TipoPersonaClub, string>>;
-    }
-  >();
+  const grupos: Omit<GrupoCumple, "fechaTexto">[] = [];
 
   for (const p of personas) {
-    const key = normalizarNombrePersona(p.nombre);
-    if (!key) continue;
-    const prev = map.get(key);
+    if (!p.nombre.trim()) continue;
+    const prev = buscarGrupoSinFecha(grupos, p.nombre);
     if (!prev) {
-      map.set(key, {
+      grupos.push({
         nombre: p.nombre.trim(),
         tipos: [...(p.tipos ?? [p.tipo])],
         detalles: p.detalle ? [p.detalle] : [],
@@ -249,12 +261,13 @@ export function deduplicarRegistrosSinFecha(personas: RegistradoSinFecha[]): Reg
       });
       continue;
     }
+    prev.nombre = elegirNombreMasCompleto(prev.nombre, p.nombre);
     prev.tipos.push(...(p.tipos ?? [p.tipo]));
     if (p.detalle?.trim()) prev.detalles.push(p.detalle.trim());
     prev.idsPorTipo[p.tipo] = p.id;
   }
 
-  return Array.from(map.values()).map((entry) => {
+  return grupos.map((entry) => {
     const tipos = ordenarTipos(entry.tipos);
     const principal = tipoPrincipal(tipos);
     const id = entry.idsPorTipo[principal] ?? Object.values(entry.idsPorTipo)[0] ?? "";
