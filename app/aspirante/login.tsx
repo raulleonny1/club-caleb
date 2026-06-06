@@ -1,43 +1,39 @@
 "use client";
 import React, { useState } from "react";
 import { db } from "../../src/firebase";
-import { doc, getDoc } from "firebase/firestore";
-import CompletarRegistroAspirante from "../../src/components/forms/CompletarRegistroAspirante";
-import { registroAspiranteCompleto } from "@/src/constants/aspirante";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { irARuta } from "@/src/lib/navegacion";
 
 export default function LoginAspirante() {
   const [pin, setPin] = useState("");
-  const [registroIncompleto, setRegistroIncompleto] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    const pinTrim = pin.trim();
+    if (!pinTrim) return;
     setLoading(true);
     setError("");
     try {
-      const ref = doc(db, "aspirantesGuiaMayor", pin);
+      const ref = doc(db, "aspirantesGuiaMayor", pinTrim);
       const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        setError("PIN inválido o aspirante no registrado.");
-        setLoading(false);
+      if (snap.exists()) {
+        irARuta(`/aspirante/dashboard?pin=${encodeURIComponent(pinTrim)}`);
         return;
       }
-      const data = snap.data();
-      const incompleto = !registroAspiranteCompleto(data);
-      setRegistroIncompleto(incompleto);
-      if (!incompleto) {
-        // Aquí iría la redirección al dashboard del sistema
-        window.location.href = `/aspirante/dashboard?pin=${pin}`;
+      const q = query(collection(db, "aspirantesGuiaMayor"), where("pin", "==", pinTrim));
+      const result = await getDocs(q);
+      if (!result.empty) {
+        irARuta(`/aspirante/dashboard?pin=${encodeURIComponent(pinTrim)}`);
+        return;
       }
-    } catch (err) {
+      setError("PIN inválido o aspirante no registrado.");
+    } catch {
       setError("Error al consultar datos.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
-
-  if (registroIncompleto) {
-    return <CompletarRegistroAspirante pin={pin} />;
-  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col items-center justify-center">
@@ -46,7 +42,7 @@ export default function LoginAspirante() {
         {error && <div className="mb-4 text-red-600">{error}</div>}
         <input
           value={pin}
-          onChange={e => setPin(e.target.value)}
+          onChange={(e) => setPin(e.target.value)}
           placeholder="PIN de acceso"
           className="border p-2 rounded-xl mb-4 w-full"
           maxLength={6}
@@ -54,9 +50,9 @@ export default function LoginAspirante() {
         <button
           onClick={handleLogin}
           className="bg-indigo-700 text-white px-6 py-2 rounded-xl font-bold hover:bg-indigo-900 transition-all w-full"
-          disabled={loading || !pin}
+          disabled={loading || !pin.trim()}
         >
-          Ingresar
+          {loading ? "Ingresando…" : "Ingresar"}
         </button>
       </div>
     </div>

@@ -2,10 +2,11 @@
 import React, { useState, useEffect } from "react";
 import { db, formatFechaDDMMYYYY } from "../../src/firebase";
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from "firebase/firestore";
-import { LogOut, ShieldCheck, TrendingUp, Trophy, BookOpen, Medal, Map, CheckCircle2, Clock, Bell } from "lucide-react";
+import { LogOut, ShieldCheck, TrendingUp, Trophy, BookOpen, Medal, Map, CheckCircle2, Clock, Bell, UserCircle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { getCategoriasConPuntos, sumarPuntos } from "@/src/lib/categoriasPuntos";
 import { progresoGuiaMayorDesdeEvaluaciones } from "@/src/lib/progresoConquistador";
+import { nombreCompletoAspirante } from "@/src/constants/aspirante";
 
 const iconosEspecialidades: { [key: string]: string } = {
   "Vida al Aire Libre": "🏕️",
@@ -103,7 +104,7 @@ export default function AspiranteDashboard() {
   }, [pin]);
 
   const handleLogout = () => {
-    window.location.href = "/aspirante/login";
+    window.location.href = "/";
   };
 
   if (loading) {
@@ -112,6 +113,12 @@ export default function AspiranteDashboard() {
   if (error) {
     return <div className="text-center mt-10 text-lg text-red-700 font-bold">{error}<br/><span className="text-xs text-slate-500">PIN ingresado: {pin}</span></div>;
   }
+
+  const nombreDisplay = nombreCompletoAspirante(user) || user.nombre || "Aspirante";
+  const genero = user.genero || user.sexo || "—";
+  const nacimiento = user.nacimiento
+    ? formatFechaDDMMYYYY(String(user.nacimiento).slice(0, 10))
+    : "—";
 
   return (
     <>
@@ -143,7 +150,7 @@ export default function AspiranteDashboard() {
           <div className="mt-4 md:mt-8 mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div className="space-y-1 text-center md:text-left">
               <h1 className="text-white text-4xl md:text-6xl font-black tracking-tighter leading-tight drop-shadow-md">
-                ¡Hola, {user.nombre ? user.nombre.split(' ')[0] : 'Aspirante'}! 👋
+                ¡Hola, {nombreDisplay.split(" ")[0]}! 👋
               </h1>
               <p className="text-indigo-100 text-base md:text-xl font-medium">
                 {user.asociacion ? (
@@ -269,7 +276,52 @@ export default function AspiranteDashboard() {
               </div>
             </div>
             <div className="lg:col-span-4 space-y-6 md:space-y-8">
-              {/* Aquí puedes agregar sidebar de eventos, retos, ficha médica, etc. */}
+              <div className="bg-white rounded-[2.5rem] p-8 shadow-lg border border-slate-100">
+                <h3 className="font-black text-xl mb-6 flex items-center gap-3 tracking-tight">
+                  <UserCircle className="text-indigo-600" size={24} />
+                  Mi información
+                </h3>
+                <dl className="space-y-3 text-sm">
+                  <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                    <dt className="text-slate-500 font-semibold">Nombre</dt>
+                    <dd className="font-bold text-slate-800 text-right">{nombreDisplay}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                    <dt className="text-slate-500 font-semibold">Edad</dt>
+                    <dd className="font-bold text-slate-800">{user.edad || "—"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                    <dt className="text-slate-500 font-semibold">Nacimiento</dt>
+                    <dd className="font-bold text-slate-800">{nacimiento}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                    <dt className="text-slate-500 font-semibold">Género</dt>
+                    <dd className="font-bold text-slate-800">{genero}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                    <dt className="text-slate-500 font-semibold">Asociación</dt>
+                    <dd className="font-bold text-slate-800 text-right">{user.asociacion || "—"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                    <dt className="text-slate-500 font-semibold">Cargo</dt>
+                    <dd className="font-bold text-slate-800">{user.cargo || "Aspirante"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500 font-semibold">PIN</dt>
+                    <dd className="font-mono font-bold text-indigo-700">{pin}</dd>
+                  </div>
+                </dl>
+                {user.fichaMedicaUrl ? (
+                  <a
+                    href={user.fichaMedicaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-5 flex w-full items-center justify-center rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-black uppercase tracking-widest text-emerald-800 hover:bg-emerald-100"
+                  >
+                    Ver ficha médica
+                  </a>
+                ) : null}
+              </div>
             </div>
           </div>
         </main>

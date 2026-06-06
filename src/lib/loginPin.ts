@@ -1,6 +1,5 @@
 import { db } from "@/src/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { registroAspiranteCompleto } from "@/src/constants/aspirante";
 import { logError, logInfo } from "@/src/lib/logger";
 import { irARuta } from "@/src/lib/navegacion";
 import { storageSeguroSet } from "@/src/lib/storageSeguro";
@@ -80,14 +79,8 @@ export async function resolverLoginPorPin(pin: string): Promise<ResultadoLoginPi
     );
     if (!snapshotAspirante.empty) {
       const aspiranteDoc = snapshotAspirante.docs[0];
-      const data = aspiranteDoc.data();
-      const registroCompleto = registroAspiranteCompleto(data);
       logInfo("Login aspirante exitoso: " + pin);
-      if (!registroCompleto) {
-        irARuta(`/aspirante/completar-registro?pin=${encodeURIComponent(pin)}`);
-      } else {
-        irARuta(`/aspirante/dashboard?pin=${encodeURIComponent(pin)}`);
-      }
+      irARuta(`/aspirante/dashboard?pin=${encodeURIComponent(pin)}`);
       return { ok: true };
     }
 
