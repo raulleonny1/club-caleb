@@ -68,6 +68,7 @@ function SortableMenuCard({
       unidades: "/admin/unidades",
       consejero: "/admin/consejero",
       especialidades: "/admin/especialidades",
+      especialidadesEnCurso: "/admin/especialidades-en-curso",
       calificaciones: "/admin/calificaciones",
       calendario: "/admin/calendario",
       aspirante: "/admin/aspirante",
