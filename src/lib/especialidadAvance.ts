@@ -110,20 +110,27 @@ export async function registrarAvanceEspecialidad(params: {
     unidad: params.unidad,
   });
 
-  await addDoc(collection(db, "especialidadAvanceHistorial"), {
-    conquisId: params.conquisId,
-    pin: params.pin,
-    nombre: params.nombre,
-    unidad: params.unidad,
-    area: params.esp.area,
-    categoria: params.esp.categoria,
-    especialidad: params.esp.especialidad,
-    estadoAnterior: params.estadoAnterior,
-    estadoNuevo: params.estadoNuevo,
-    tipo: params.tipo,
-    origen: params.origen,
-    createdAt: fecha,
-  } satisfies EspecialidadAvanceHistorialDoc);
+  try {
+    await addDoc(collection(db, "especialidadAvanceHistorial"), {
+      conquisId: params.conquisId,
+      pin: params.pin,
+      nombre: params.nombre,
+      unidad: params.unidad,
+      area: params.esp.area,
+      categoria: params.esp.categoria,
+      especialidad: params.esp.especialidad,
+      estadoAnterior: params.estadoAnterior,
+      estadoNuevo: params.estadoNuevo,
+      tipo: params.tipo,
+      origen: params.origen,
+      createdAt: fecha,
+    } satisfies EspecialidadAvanceHistorialDoc);
+  } catch (err) {
+    console.warn(
+      "No se pudo guardar especialidadAvanceHistorial (revisa reglas Firestore):",
+      err
+    );
+  }
 
   await updateDoc(doc(db, "RegistroConquis", params.conquisId), {
     especialidadAvanceNotif: {

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "firebase:rules": "firebase deploy --only firestore:rules --project conquistadores-a5ee3"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

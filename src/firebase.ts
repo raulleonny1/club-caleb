@@ -2,14 +2,23 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
+/** Proyecto único del club — todos los datos van a Firestore/Storage aquí. */
+export const FIREBASE_PROJECT_ID = "conquistadores-a5ee3";
+
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
+
+if (!firebaseConfig.projectId || firebaseConfig.projectId !== FIREBASE_PROJECT_ID) {
+  throw new Error(
+    `Firebase mal configurado: NEXT_PUBLIC_FIREBASE_PROJECT_ID debe ser "${FIREBASE_PROJECT_ID}". Revisa .env.local`
+  );
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
