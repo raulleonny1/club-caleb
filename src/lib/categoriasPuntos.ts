@@ -160,20 +160,38 @@ export function claveDocCalificacionesUnidad(
   return `unidad_${slug}`;
 }
 
-/** Columnas del historial semanal: solo categorías que aparecen con puntos en algún registro. */
+type RegistroHistorialColumnas = {
+  puntos?: Record<string, unknown>;
+  catalogoNombre?: string;
+};
+
+/** Columnas del historial semanal: categorías oficiales y actividades de catálogo con puntos. */
 export function getCategoriasEnHistorial(
-  historial: { puntos?: Record<string, unknown> }[]
+  historial: RegistroHistorialColumnas[]
 ): { id: string; nombre: string }[] {
   const conValor = new Set<string>();
+  const actividades = new Map<string, string>();
+
   for (const reg of historial) {
     if (!reg.puntos) continue;
     for (const key of Object.keys(reg.puntos)) {
-      if (toNumberPuntos(reg.puntos[key]) > 0) conValor.add(key);
+      if (toNumberPuntos(reg.puntos[key]) <= 0) continue;
+      if (IDS_OFICIALES.has(key) || key === CLAVE_RESTA_GENERAL) {
+        conValor.add(key);
+        continue;
+      }
+      const nombre =
+        reg.catalogoNombre?.trim() ||
+        (key.startsWith("actividad_") ? nombreCategoria(key) : nombreCategoria(key));
+      actividades.set(key, nombre);
     }
   }
+
   const cols = CATEGORIAS_PUNTOS.filter((c) => conValor.has(c.id));
-  if (conValor.has(CLAVE_RESTA_GENERAL)) {
-    return [...cols, { id: CLAVE_RESTA_GENERAL, nombre: "Resta" }];
-  }
-  return cols;
+  const extras = Array.from(actividades.entries()).map(([id, nombre]) => ({ id, nombre }));
+  const resta = conValor.has(CLAVE_RESTA_GENERAL)
+    ? [{ id: CLAVE_RESTA_GENERAL, nombre: "Resta" }]
+    : [];
+
+  return [...cols, ...extras, ...resta];
 }

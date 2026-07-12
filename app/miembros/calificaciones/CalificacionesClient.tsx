@@ -2,10 +2,20 @@
 
 import React, { useEffect, useState } from "react";
 import { db } from "../../../src/firebase";
-import { doc, onSnapshot, collection, getDocs, query, where } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
 import { useSearchParams } from "next/navigation";
-import { BookOpen, Star, Award } from "lucide-react";
-import { getCategoriasConPuntos, sumarPuntos } from "@/src/lib/categoriasPuntos";
+import { BookOpen, Star, Award, Trophy } from "lucide-react";
+import {
+  getCategoriasConPuntos,
+  sumarPuntos,
+  esDocumentoCalificacionesUnidad,
+} from "@/src/lib/categoriasPuntos";
+import {
+  actividadesRecientesMiembro,
+  puntosMovimientoHistorial,
+  tituloMovimientoHistorial,
+  type MovimientoPuntosHistorial,
+} from "@/src/lib/historialPuntosMiembro";
 
 export default function CalificacionesClient() {
   const searchParams = useSearchParams();
@@ -15,36 +25,91 @@ export default function CalificacionesClient() {
   const [calificacionesRecientes, setCalificacionesRecientes] = useState<
     { id: string; materia?: string; nota?: string }[]
   >([]);
+  const [historialSemanal, setHistorialSemanal] = useState<MovimientoPuntosHistorial[]>([]);
+  const [historialUnidad, setHistorialUnidad] = useState<MovimientoPuntosHistorial[]>([]);
+  const [unidadMiembro, setUnidadMiembro] = useState("");
   const [nombre, setNombre] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!pin) return;
+    const pinKey = pin.trim();
 
-    const califQuery = query(collection(db, "calificaciones"), where("pin", "==", pin));
-    getDocs(califQuery).then((snap) => {
+    const aplicarPuntosDoc = (data: Record<string, unknown>, docId: string) => {
+      if (esDocumentoCalificacionesUnidad(docId, data)) return;
+      setPuntosCategorias((data.puntos as Record<string, unknown>) || {});
+      setEtiquetasActividades((data.etiquetasActividades as Record<string, string>) || {});
+      if (data.nombre) setNombre(String(data.nombre));
+      setLoading(false);
+    };
+
+    const unsubDoc = onSnapshot(doc(db, "calificacionesConquis", pinKey), (snap) => {
+      if (snap.exists()) aplicarPuntosDoc(snap.data() as Record<string, unknown>, snap.id);
+    });
+
+    const qCalif = query(collection(db, "calificacionesConquis"), where("pin", "==", pinKey));
+    const unsubQuery = onSnapshot(qCalif, (snap) => {
+      if (snap.empty) return;
+      for (const docSnap of snap.docs) {
+        if (esDocumentoCalificacionesUnidad(docSnap.id, docSnap.data())) continue;
+        aplicarPuntosDoc(docSnap.data() as Record<string, unknown>, docSnap.id);
+        break;
+      }
+    });
+
+    const califQuery = query(collection(db, "calificaciones"), where("pin", "==", pinKey));
+    const unsubCalif = onSnapshot(califQuery, (snap) => {
       setCalificacionesRecientes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
-    const refConquis = doc(db, "calificacionesConquis", pin);
-    const unsub = onSnapshot(refConquis, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setPuntosCategorias(data.puntos || {});
-        setEtiquetasActividades((data.etiquetasActividades as Record<string, string>) || {});
-        setNombre(data.nombre || "");
-      } else {
-        setPuntosCategorias({});
-        setEtiquetasActividades({});
+    const qHist = query(collection(db, "calificacionesSemanal"), where("pin", "==", pinKey));
+    const unsubHist = onSnapshot(qHist, (snap) => {
+      setHistorialSemanal(
+        snap.docs.map((d) => ({ id: d.id, ...(d.data() as MovimientoPuntosHistorial) }))
+      );
+    });
+
+    const qRegistro = query(collection(db, "RegistroConquis"), where("pin", "==", pinKey));
+    const unsubRegistro = onSnapshot(qRegistro, (snap) => {
+      if (!snap.empty) {
+        const data = snap.docs[0].data();
+        setUnidadMiembro(String(data.unidad ?? "").trim());
+        if (data.nombre) setNombre(String(data.nombre));
       }
       setLoading(false);
     });
 
-    return () => unsub();
+    return () => {
+      unsubDoc();
+      unsubQuery();
+      unsubCalif();
+      unsubHist();
+      unsubRegistro();
+    };
   }, [pin]);
+
+  useEffect(() => {
+    const unidad = unidadMiembro.trim();
+    if (!unidad) {
+      setHistorialUnidad([]);
+      return;
+    }
+    const qHistUnidad = query(collection(db, "calificacionesSemanal"), where("unidad", "==", unidad));
+    const unsub = onSnapshot(qHistUnidad, (snap) => {
+      setHistorialUnidad(
+        snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as MovimientoPuntosHistorial) }))
+          .filter(
+            (reg) => reg.alcance === "unidad" || String(reg.pin ?? "").startsWith("unidad_")
+          )
+      );
+    });
+    return () => unsub();
+  }, [unidadMiembro]);
 
   const categoriasConPuntos = getCategoriasConPuntos(puntosCategorias, etiquetasActividades);
   const total = sumarPuntos(puntosCategorias, etiquetasActividades);
+  const actividadesRecientes = actividadesRecientesMiembro(historialSemanal, historialUnidad, 12);
 
   if (loading) return <div className="text-center mt-10 text-lg text-indigo-700">Cargando datos...</div>;
 
@@ -121,7 +186,47 @@ export default function CalificacionesClient() {
         </div>
       )}
 
-      {categoriasConPuntos.length === 0 && calificacionesRecientes.length === 0 && (
+      {actividadesRecientes.length > 0 && (
+        <div className="mb-8">
+          <div className="font-bold text-xs text-indigo-600 mb-2">Actividades y movimientos</div>
+          <div className="space-y-3">
+            {actividadesRecientes.map(({ reg, esUnidad }) => {
+              const pts = puntosMovimientoHistorial(reg);
+              const esResta = reg.tipo === "resta";
+              return (
+                <div
+                  key={reg.id || `${reg.fecha}-${tituloMovimientoHistorial(reg)}`}
+                  className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/80 p-4"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="rounded-lg bg-indigo-100 p-2 text-indigo-600">
+                      <Trophy size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-slate-800">{tituloMovimientoHistorial(reg)}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        {reg.fecha || "—"} · {esUnidad ? "Unidad" : "Personal"}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-xl px-3 py-1.5 text-xs font-black ${
+                      esResta ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+                    }`}
+                  >
+                    {esResta ? "−" : "+"}
+                    {pts} pts
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {categoriasConPuntos.length === 0 &&
+        calificacionesRecientes.length === 0 &&
+        actividadesRecientes.length === 0 && (
         <p className="text-slate-400 text-sm text-center py-8">
           No hay puntos ni notas registrados para este PIN.
         </p>

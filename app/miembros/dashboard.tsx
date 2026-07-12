@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import { db, formatFechaDDMMYYYY } from "../../src/firebase";
-import { collection, getDocs, query, where, doc, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc } from "firebase/firestore";
 import { nombreEvento, ordenarEventosPorFecha, type EventoFirestore } from "@/src/lib/eventos";
 import {
 	DEFAULT_RETO_MIEMBRO,
@@ -28,7 +28,12 @@ import {
 	ShieldCheck,
 	TrendingUp
 } from 'lucide-react';
-import { getCategoriasConPuntos, indexarTotalesPorPin, sumarPuntos } from "@/src/lib/categoriasPuntos";
+import {
+	getCategoriasConPuntos,
+	indexarTotalesPorPin,
+	sumarPuntos,
+	esDocumentoCalificacionesUnidad,
+} from "@/src/lib/categoriasPuntos";
 import {
 	construirRankingConquistadores,
 	posicionConquistador,
@@ -63,6 +68,12 @@ import {
 	type EspecialidadAvanceHistorialEntry,
 	type EspecialidadAvanceNotif,
 } from "@/src/lib/especialidadAvance";
+import {
+	actividadesRecientesMiembro,
+	puntosMovimientoHistorial,
+	tituloMovimientoHistorial,
+	type MovimientoPuntosHistorial,
+} from "@/src/lib/historialPuntosMiembro";
 
 interface Usuario {
 	nombre?: string;
@@ -93,7 +104,8 @@ function App() {
 		tareasRegistradas: 0,
 		puntosTareas: 0,
 	});
-	const [historialSemanal, setHistorialSemanal] = useState<{ puntos?: Record<string, unknown> }[]>([]);
+	const [historialSemanal, setHistorialSemanal] = useState<MovimientoPuntosHistorial[]>([]);
+	const [historialUnidad, setHistorialUnidad] = useState<MovimientoPuntosHistorial[]>([]);
 	const [retoMiembro, setRetoMiembro] = useState<RetoMiembroDashboardConfig>(DEFAULT_RETO_MIEMBRO);
 	const [unidadMiembro, setUnidadMiembro] = useState("");
 	const [retoConsejero, setRetoConsejero] = useState<RetoEspecialDoc | null>(null);
@@ -166,20 +178,36 @@ function App() {
 	useEffect(() => {
 		if (!pin) return;
 
-		const unsubConquis = onSnapshot(doc(db, "calificacionesConquis", pin), (conquisSnap) => {
-			if (conquisSnap.exists()) {
-				const data = conquisSnap.data();
-				setPuntosCategorias(data.puntos || {});
-				setEtiquetasActividades(
-					(data.etiquetasActividades as Record<string, string>) || {}
-				);
-			} else {
-				setPuntosCategorias({});
-				setEtiquetasActividades({});
+		const pinKey = pin.trim();
+
+		const aplicarPuntosPersonales = (
+			data: Record<string, unknown>,
+			docId: string
+		) => {
+			if (esDocumentoCalificacionesUnidad(docId, data)) return;
+			setPuntosCategorias((data.puntos as Record<string, number>) || {});
+			setEtiquetasActividades((data.etiquetasActividades as Record<string, string>) || {});
+		};
+
+		const unsubConquisDoc = onSnapshot(doc(db, "calificacionesConquis", pinKey), (snap) => {
+			if (snap.exists()) {
+				aplicarPuntosPersonales(snap.data() as Record<string, unknown>, snap.id);
 			}
 		});
 
-		const qRegistro = query(collection(db, "RegistroConquis"), where("pin", "==", pin));
+		const qCalifPersonal = query(
+			collection(db, "calificacionesConquis"),
+			where("pin", "==", pinKey)
+		);
+		const unsubConquis = onSnapshot(qCalifPersonal, (snap) => {
+			for (const docSnap of snap.docs) {
+				if (esDocumentoCalificacionesUnidad(docSnap.id, docSnap.data())) continue;
+				aplicarPuntosPersonales(docSnap.data() as Record<string, unknown>, docSnap.id);
+				break;
+			}
+		});
+
+		const qRegistro = query(collection(db, "RegistroConquis"), where("pin", "==", pinKey));
 		const unsubRegistro = onSnapshot(
 			qRegistro,
 			(snap) => {
@@ -211,27 +239,52 @@ function App() {
 			}
 		);
 
-		(async () => {
-			try {
-				const califSnap = await getDocs(
-					query(collection(db, "calificaciones"), where("pin", "==", pin))
-				);
-				setCalificacionesRecientes(califSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+		const qHistPersonal = query(
+			collection(db, "calificacionesSemanal"),
+			where("pin", "==", pinKey)
+		);
+		const unsubHistPersonal = onSnapshot(qHistPersonal, (snap) => {
+			setHistorialSemanal(
+				snap.docs.map((d) => ({ id: d.id, ...(d.data() as MovimientoPuntosHistorial) }))
+			);
+		});
 
-				const semSnap = await getDocs(
-					query(collection(db, "calificacionesSemanal"), where("pin", "==", pin))
-				);
-				setHistorialSemanal(semSnap.docs.map((d) => d.data() as { puntos?: Record<string, unknown> }));
-			} catch (err) {
-				console.error(err);
-			}
-		})();
+		const califQuery = query(collection(db, "calificaciones"), where("pin", "==", pinKey));
+		const unsubCalif = onSnapshot(califQuery, (snap) => {
+			setCalificacionesRecientes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+		});
 
 		return () => {
+			unsubConquisDoc();
 			unsubConquis();
 			unsubRegistro();
+			unsubHistPersonal();
+			unsubCalif();
 		};
 	}, [pin]);
+
+	useEffect(() => {
+		const unidad = unidadMiembro.trim();
+		if (!unidad) {
+			setHistorialUnidad([]);
+			return;
+		}
+		const qHistUnidad = query(
+			collection(db, "calificacionesSemanal"),
+			where("unidad", "==", unidad)
+		);
+		const unsub = onSnapshot(qHistUnidad, (snap) => {
+			setHistorialUnidad(
+				snap.docs
+					.map((d) => ({ id: d.id, ...(d.data() as MovimientoPuntosHistorial) }))
+					.filter(
+						(reg) =>
+							reg.alcance === "unidad" || String(reg.pin ?? "").startsWith("unidad_")
+					)
+			);
+		});
+		return () => unsub();
+	}, [unidadMiembro]);
 
 	useEffect(() => {
 		if (!pin.trim()) {
@@ -360,6 +413,11 @@ function App() {
 	const rangoActual = user.clase || user.rango || "Sin clase";
 	const categoriasConPuntos = getCategoriasConPuntos(puntosCategorias, etiquetasActividades);
 	const totalPuntos = sumarPuntos(puntosCategorias, etiquetasActividades);
+	const actividadesRecientes = actividadesRecientesMiembro(
+		historialSemanal,
+		historialUnidad,
+		8
+	);
 
 	return (
 		<>
@@ -503,7 +561,9 @@ function App() {
 									<button className="text-indigo-600 text-xs font-black uppercase tracking-widest hover:underline" onClick={() => router.push(`/miembros/calificaciones?pin=${pin}`)}>Ver Todo</button>
 								</div>
 								<div className="space-y-4">
-									{categoriasConPuntos.length === 0 && calificacionesRecientes.length === 0 ? (
+									{categoriasConPuntos.length === 0 &&
+									calificacionesRecientes.length === 0 &&
+									actividadesRecientes.length === 0 ? (
 										<div className="text-slate-400 text-xs">Aún no tienes puntos ni notas registradas.</div>
 									) : (
 										<>
@@ -537,6 +597,43 @@ function App() {
 													</span>
 												</div>
 											))}
+											{actividadesRecientes.length > 0 ? (
+												<div className="pt-2">
+													<p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+														Actividades registradas
+													</p>
+													{actividadesRecientes.map(({ reg, esUnidad }) => {
+														const pts = puntosMovimientoHistorial(reg);
+														const esResta = reg.tipo === "resta";
+														return (
+															<div
+																key={reg.id || `${reg.fecha}-${tituloMovimientoHistorial(reg)}`}
+																className="mb-2 flex items-center justify-between rounded-3xl border border-transparent bg-slate-50/80 p-4 transition-all hover:border-slate-200 hover:bg-white"
+															>
+																<div className="min-w-0 flex-1 pr-3">
+																	<p className="truncate text-sm font-black text-slate-800">
+																		{tituloMovimientoHistorial(reg)}
+																	</p>
+																	<p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+																		{reg.fecha || "—"}
+																		{esUnidad ? " · Unidad" : " · Personal"}
+																	</p>
+																</div>
+																<span
+																	className={`shrink-0 rounded-xl px-3 py-1.5 text-[11px] font-black uppercase shadow-sm ${
+																		esResta
+																			? "bg-red-100 text-red-700"
+																			: "bg-emerald-100 text-emerald-700"
+																	}`}
+																>
+																	{esResta ? "−" : "+"}
+																	{pts} pts
+																</span>
+															</div>
+														);
+													})}
+												</div>
+											) : null}
 										</>
 									)}
 								</div>
